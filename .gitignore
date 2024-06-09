@@ -1,0 +1,15 @@
+# Ignore all object files, shared libraries, executables, and temporary files
+*.o
+*.so
+*.exe
+*.out
+*.a
+*.lib
+*.dll
+*.pdb
+
+# Ignore directories created by build systems
+/build/
+/bin/
+/obj/
+/CMakeFiles/
