@@ -8,7 +8,7 @@
 using namespace std;
 using namespace Eigen;
 
-// read data from CSV file
+// Read data from CSV file
 MatrixXd read_data(const string& filename, int rows, int cols) {
     ifstream file(filename);
     if (!file.is_open()) {
@@ -30,18 +30,20 @@ MatrixXd read_data(const string& filename, int rows, int cols) {
     return data;
 }
 
-// standardize data
-MatrixXd standardize(const MatrixXd& data) {
+// Parallel standardize data
+MatrixXd standardize_parallel(const MatrixXd& data) {
     MatrixXd standardized = data;
     VectorXd mean(data.cols());
     VectorXd stddev(data.cols());
 
+    // Parallel mean and stddev calculation
     #pragma omp parallel for
     for (int i = 0; i < data.cols(); ++i) {
         mean(i) = data.col(i).mean();
         stddev(i) = sqrt((data.col(i).array() - mean(i)).square().sum() / (data.rows() - 1));
     }
 
+    // Parallel row standardization
     #pragma omp parallel for
     for (int i = 0; i < data.rows(); ++i) {
         for (int j = 0; j < data.cols(); ++j) {
@@ -52,31 +54,52 @@ MatrixXd standardize(const MatrixXd& data) {
     return standardized;
 }
 
-// PCA Function
-MatrixXd pca_parallel(const MatrixXd& data, int n_components) {
-    MatrixXd standardized_data = standardize(data);
-    MatrixXd cov_matrix = (standardized_data.transpose() * standardized_data) / (standardized_data.rows() - 1);
+// PCA Function with full parallelization
+MatrixXd pca_full_parallel(const MatrixXd& data, int n_components) {
+    MatrixXd standardized_data = standardize_parallel(data);
+    MatrixXd cov_matrix(data.cols(), data.cols());
 
-    SelfAdjointEigenSolver<MatrixXd> eig(cov_matrix);
-    VectorXd eigenvalues = eig.eigenvalues();
-    MatrixXd eigenvectors = eig.eigenvectors();
+    // Parallel covariance matrix calculation
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < data.cols(); ++i) {
+        for (int j = i; j < data.cols(); ++j) {
+            cov_matrix(i, j) = (standardized_data.col(i).array() * standardized_data.col(j).array()).mean();
+            cov_matrix(j, i) = cov_matrix(i, j);
+        }
+    }
+
+    // Parallelize eigenvalue decomposition
+    MatrixXd eigenvectors;
+    VectorXd eigenvalues;
+
+    #pragma omp parallel
+    {
+        #pragma omp single nowait
+        {
+            SelfAdjointEigenSolver<MatrixXd> eig(cov_matrix);
+            #pragma omp critical
+            {
+                eigenvalues = eig.eigenvalues();
+                eigenvectors = eig.eigenvectors();
+            }
+        }
+    }
 
     vector<pair<double, VectorXd>> eigen_pairs;
     for (int i = 0; i < eigenvalues.size(); ++i) {
         eigen_pairs.push_back(make_pair(eigenvalues(i), eigenvectors.col(i)));
     }
+
     sort(eigen_pairs.rbegin(), eigen_pairs.rend(), [](const pair<double, VectorXd>& a, const pair<double, VectorXd>& b) {
         return a.first > b.first;
     });
 
     MatrixXd sorted_eigenvectors(eigenvectors.rows(), n_components);
-    #pragma omp parallel for
     for (int i = 0; i < n_components; ++i) {
         sorted_eigenvectors.col(i) = eigen_pairs[i].second;
     }
 
-    MatrixXd transformed_data = standardized_data * sorted_eigenvectors;
-    return transformed_data;
+    return sorted_eigenvectors;
 }
 
 int main(int argc, char* argv[]) {
@@ -92,12 +115,12 @@ int main(int argc, char* argv[]) {
     MatrixXd data = read_data(datafile, rows, cols);
     int n_components = 1;
 
-    // Measure time for parallel version
+    // Measure time for full parallel version
     auto start_par = chrono::high_resolution_clock::now();
-    MatrixXd transformed_data_par = pca_parallel(data, n_components);
+    MatrixXd transformed_data_par = pca_full_parallel(data, n_components);
     auto end_par = chrono::high_resolution_clock::now();
     chrono::duration<double> duration_par = end_par - start_par;
-    cout << "Parallel version took " << duration_par.count() << " seconds." << endl;
+    cout << "Fully parallel PCA took " << duration_par.count() << " seconds." << endl;
 
     return 0;
 }
