@@ -7,7 +7,7 @@
 using namespace std;
 using namespace Eigen;
 
-//read data from CSV file
+// Read data from CSV file
 MatrixXd read_data(const string& filename, int rows, int cols) {
     ifstream file(filename);
     if (!file.is_open()) {
@@ -29,7 +29,7 @@ MatrixXd read_data(const string& filename, int rows, int cols) {
     return data;
 }
 
-// standardize data
+// Standardize data
 MatrixXd standardize(const MatrixXd& data) {
     MatrixXd standardized = data;
     VectorXd mean = data.colwise().mean();
@@ -51,6 +51,7 @@ MatrixXd pca(const MatrixXd& data, int n_components) {
     for (int i = 0; i < eigenvalues.size(); ++i) {
         eigen_pairs.push_back(make_pair(eigenvalues(i), eigenvectors.col(i)));
     }
+
     sort(eigen_pairs.rbegin(), eigen_pairs.rend(), [](const pair<double, VectorXd>& a, const pair<double, VectorXd>& b) {
         return a.first > b.first;
     });
@@ -60,8 +61,7 @@ MatrixXd pca(const MatrixXd& data, int n_components) {
         sorted_eigenvectors.col(i) = eigen_pairs[i].second;
     }
 
-    MatrixXd transformed_data = standardized_data * sorted_eigenvectors;
-    return transformed_data;
+    return sorted_eigenvectors;
 }
 
 int main(int argc, char* argv[]) {
